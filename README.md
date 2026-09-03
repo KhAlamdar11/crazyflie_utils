@@ -8,6 +8,17 @@ First deliverable: **communication stress tests** — how well does the radio /
 server / ROS path hold up under consecutive takeoffs and landings, synchronous
 vs unsynchronised fleet commands, and command floods.
 
+```bash
+ros2 run crazyflie_utils stress_test takeoff_land_cycle \
+    --num-uavs 3 \
+    -s test.params.mode=sequential \
+    -s test.params.stagger=3.0 \
+    -s test.params.cycles=20 \
+    -s test.params.takeoff_height=0.5 \
+    -s test.params.hover_time=3.0 \
+    -s test.params.ground_time=3.0
+```
+
 ## Install
 
 ```bash
