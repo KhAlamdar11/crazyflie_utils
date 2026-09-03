@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+*.pyo
+
+# ROS2 build artifacts
+build/
+install/
+log/
+
+# Local Claude Code settings
+.claude/settings.local.json

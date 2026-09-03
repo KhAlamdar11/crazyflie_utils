@@ -1,0 +1,49 @@
+# ---------------------------------------------------------------------------
+# sync_vs_async - is a "fleet command" actually synchronous?
+#
+#   ros2 run crazyflie_utils stress_test sync_vs_async --num-uavs 4
+#
+# FLIGHT TEST. The same takeoff/land is flown once per dispatch style, and the
+# styles are compared on uplink latency and on real fleet skew (measured from
+# each drone's pose stream, so it includes the radio, not just ROS).
+#
+#   broadcast  : one /all/takeoff  -> one broadcast packet for the fleet
+#   parallel   : N unicast calls dispatched back to back, awaited together
+#   sequential : N unicast calls, each awaited before the next is sent
+#
+# Skew resolution is bounded by telemetry.expected_pose_rate (100 ms at 10 Hz),
+# so read the modes against each other rather than as absolute numbers. Raise
+# the pose rate in your crazyflies.yaml if you need finer resolution.
+# ---------------------------------------------------------------------------
+
+safety:
+  telemetry_stall_abort: 3.0
+
+test:
+  type: sync_vs_async
+  params:
+    # Each round flies every mode once; more rounds average out radio luck.
+    rounds: 3
+    modes: [broadcast, parallel, sequential]
+
+    takeoff_height: 0.5
+    takeoff_duration: 2.0
+    hover_time: 3.0
+    land_height: 0.0
+    land_duration: 2.0
+    ground_time: 4.0
+
+    # Deliberately de-synchronise unicast dispatch by this many seconds per
+    # drone (0 = as fast as possible). Useful to show the skew you get from a
+    # controller that staggers its commands.
+    stagger: 0.0
+
+    airborne_fraction: 0.6
+    airborne_timeout: 6.0
+
+    # 'same' lands with the round's own mode; set to e.g. broadcast to keep
+    # the landing identical across modes so only the takeoff differs.
+    land_mode: same
+
+report:
+  tag: sync

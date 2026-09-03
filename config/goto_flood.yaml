@@ -1,0 +1,58 @@
+# ---------------------------------------------------------------------------
+# goto_flood - saturate the uplink with go_to commands while airborne.
+#
+#   ros2 run crazyflie_utils stress_test goto_flood --num-uavs 3
+#
+# FLIGHT TEST. The fleet takes off, then receives go_to commands at each rate
+# in `rate_hz` for `stage_duration` seconds. Offered load per stage is
+# rate_hz * num_uavs service calls per second, so the stage list walks you up
+# to the point where the link starts dropping commands.
+#
+# The default `hold` pattern sends a RELATIVE (0, 0, 0) move: the drones hover
+# in place and the test measures pure command throughput. Switch to square or
+# circle to load the flight controller as well - make sure you have the space.
+# ---------------------------------------------------------------------------
+
+safety:
+  telemetry_stall_abort: 3.0
+
+test:
+  type: goto_flood
+  params:
+    takeoff_height: 0.5
+    takeoff_duration: 2.0
+    takeoff_mode: broadcast
+    settle_time: 3.0
+
+    # Command rate per drone; each entry is a separate stage.
+    rate_hz: [2.0, 5.0, 10.0, 20.0]
+    stage_duration: 15.0
+    recover_time: 3.0
+
+    # hold | square | circle
+    pattern: hold
+    radius: 0.25
+    goto_duration: 1.0
+
+    # parallel | sequential | broadcast (broadcast requires relative: true,
+    # since one absolute goal for the whole fleet means a mid-air meeting).
+    mode: parallel
+    relative: true
+
+    # true  : each tick waits for its responses (achieved rate is capped by
+    #         latency - a well-behaved client)
+    # false : fire and forget at the requested rate, responses collected at
+    #         the end of the stage. Harsher, and the one that saturates the
+    #         radio. Start with true, then repeat with false.
+    await_responses: true
+
+    land_height: 0.0
+    land_duration: 2.0
+    land_mode: broadcast
+
+    airborne_fraction: 0.6
+    airborne_timeout: 6.0
+    log_every: 25
+
+report:
+  tag: flood

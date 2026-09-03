@@ -1,0 +1,47 @@
+# ---------------------------------------------------------------------------
+# service_ping - ground-safe uplink benchmark. RUN THIS FIRST.
+#
+#   ros2 run crazyflie_utils stress_test service_ping
+#
+# Nothing takes off. One cheap service is called over and over on every drone
+# and each round trip is timed, which gives you the baseline latency and loss
+# of the ROS -> server -> radio -> firmware path before any flight load.
+#
+# Merged on top of common.yaml, so fleet size etc. come from there (or from
+# --set fleet.num_uavs=4).
+# ---------------------------------------------------------------------------
+
+test:
+  type: service_ping
+  params:
+    # notify_setpoints_stop : answered by the firmware, motors untouched
+    # arm                   : arms/disarms alternately (needs a newer
+    #                         crazyflie_interfaces with Arm.srv)
+    # land                  : the only broadcast-capable option
+    service: notify_setpoints_stop
+
+    # parallel   - one call per drone, all in flight at once
+    # sequential - one call per drone, awaited one at a time
+    # broadcast  - a single /all call (service: land only)
+    mode: parallel
+
+    iterations: 200
+
+    # Batch dispatch rate. Set 0 to go as fast as the responses come back,
+    # which is the harshest setting and the fastest way to find a wedged
+    # server thread.
+    rate_hz: 10.0
+
+    warmup_iterations: 5
+
+    # Payload for notify_setpoints_stop; 0 releases the lock immediately.
+    remain_valid_millisecs: 0
+
+    # Only used when service: land.
+    land_height: 0.0
+    land_duration: 1.0
+
+    log_every: 25
+
+report:
+  tag: ping

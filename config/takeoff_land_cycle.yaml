@@ -1,0 +1,55 @@
+# ---------------------------------------------------------------------------
+# takeoff_land_cycle - consecutive takeoff / hover / land cycles.
+#
+#   ros2 run crazyflie_utils stress_test takeoff_land_cycle
+#   ros2 run crazyflie_utils stress_test takeoff_land_cycle \
+#       --num-uavs 4 -s test.params.cycles=25
+#
+# FLIGHT TEST. Clear the area first, and rehearse with --dry-run.
+#
+# Each cycle records takeoff/land latency, whether every drone actually left
+# the ground (pose-verified command loss), how far apart they started moving,
+# and the telemetry health during the cycle. The per-cycle table in the report
+# is what shows a link degrading as cycles accumulate.
+# ---------------------------------------------------------------------------
+
+safety:
+  # Recommended for flight tests: bail out if a drone stops reporting.
+  telemetry_stall_abort: 3.0
+
+test:
+  type: takeoff_land_cycle
+  params:
+    cycles: 10
+
+    # broadcast | parallel | sequential -- how the fleet command is dispatched.
+    mode: broadcast
+    # 'same' reuses `mode` for landing.
+    land_mode: same
+
+    takeoff_height: 0.5
+    takeoff_duration: 2.0
+
+    # Cycle through these heights instead of takeoff_height when non-empty,
+    # e.g. [0.4, 0.8, 0.4, 1.0] to exercise different climb durations.
+    height_sequence: []
+
+    hover_time: 3.0
+    land_height: 0.0
+    land_duration: 2.0
+    ground_time: 3.0
+
+    # Delay between per-drone calls (parallel/sequential modes only).
+    stagger: 0.0
+
+    # A drone counts as airborne once it reports this fraction of the
+    # commanded height; failing to get there means the command was lost.
+    airborne_fraction: 0.6
+    airborne_timeout: 6.0
+
+    # Above this altitude at the end of a cycle counts as "did not land".
+    landed_height: 0.1
+
+
+report:
+  tag: cycles

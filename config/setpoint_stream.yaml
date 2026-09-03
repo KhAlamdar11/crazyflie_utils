@@ -1,0 +1,60 @@
+# ---------------------------------------------------------------------------
+# setpoint_stream - streaming-setpoint bandwidth test.
+#
+#   ros2 run crazyflie_utils stress_test setpoint_stream --num-uavs 3
+#
+# FLIGHT TEST, and the heaviest one on the radio. The fleet takes off with the
+# high-level commander, then every drone is fed cmd_hover (or cmd_full_state)
+# at each rate in `rates_hz`. Fleet-wide load is rates_hz * num_uavs packets
+# per second, and the report shows what the downlink still manages to deliver
+# under that load - which is the number that tells you how many drones your
+# radio setup can really stream to.
+#
+# Note that cmd_hover is a VELOCITY setpoint with height hold: vx = vy = 0
+# means "hold zero velocity", not "hold this position", so expect XY drift
+# over long stages. Keep stage_duration modest indoors.
+# ---------------------------------------------------------------------------
+
+safety:
+  telemetry_stall_abort: 3.0
+
+telemetry:
+  # Streaming makes stalls the interesting signal; watch this column.
+  stall_threshold: 0.3
+
+test:
+  type: setpoint_stream
+  params:
+    # hover | full_state | position (position needs a server that subscribes
+    # to cmd_position)
+    setpoint_type: hover
+
+    # Per-drone publish rates; each entry is a stage.
+    rates_hz: [10.0, 25.0, 50.0, 100.0]
+    stage_duration: 15.0
+    recover_time: 3.0
+
+    takeoff_height: 0.5
+    takeoff_duration: 2.0
+    takeoff_mode: broadcast
+    settle_time: 3.0
+
+    # Contents of the streamed setpoint.
+    hover_z: 0.5
+    vx: 0.0
+    vy: 0.0
+    yaw_rate: 0.0
+
+    # Grace window for the handover back to the high-level commander before
+    # landing. Without this the Land command loses to the streaming lock.
+    notify_stop_ms: 300
+
+    land_height: 0.0
+    land_duration: 2.0
+    land_mode: broadcast
+
+    airborne_fraction: 0.6
+    airborne_timeout: 6.0
+
+report:
+  tag: stream

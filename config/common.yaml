@@ -1,0 +1,116 @@
+# ---------------------------------------------------------------------------
+# Shared defaults for every crazyflie_utils stress test.
+#
+# This file is merged first; the scenario file (e.g. sync_vs_async.yaml) is
+# merged on top of it, and --set key.path=value on top of that. Anything you
+# leave out falls back to crazyflie_utils/config.py:DEFAULTS.
+# ---------------------------------------------------------------------------
+
+fleet:
+  # Explicit namespaces win over num_uavs/prefix. Use this when the drone
+  # names in your crazyflies.yaml are not cf1..cfN.
+  #   namespaces: [cf1, cf3, cf231]
+  namespaces: []
+
+  # Otherwise namespaces are generated as <prefix><index>, starting at
+  # index_start: cf1, cf2, ... for the defaults below.
+  num_uavs: 2
+  prefix: cf
+  index_start: 1
+
+  # Namespace the crazyflie_server advertises its broadcast services under.
+  broadcast_namespace: all
+
+timing:
+  # A service call that has not answered within this many seconds is counted
+  # as a timeout. This is the headline uplink failure metric, so keep it
+  # tight enough to be meaningful (the radio round trip is single-digit ms).
+  service_timeout: 3.0
+
+  # How long to wait at startup for crazyflie_server to advertise everything.
+  # Discovery is fast; raise it only if the server is still connecting to
+  # drones when the test starts.
+  service_ready_timeout: 4.0
+
+  # How long to wait for the first pose message from every drone.
+  telemetry_ready_timeout: 4.0
+
+  # Generic settling pause available to scenarios.
+  settle_time: 2.0
+
+  # Pause between arming a drone and commanding its takeoff. Each drone is
+  # armed just before its own takeoff (not all together at startup), so in a
+  # sequential run this delay is paid once per drone.
+  arm_delay: 0.5
+
+safety:
+  # Log every command instead of sending it. Use this to rehearse a config.
+  dry_run: false
+
+  # Hard ceiling applied to every commanded height in this package.
+  max_height: 1.5
+
+  # Refuse to fly when a service or a drone's telemetry is missing.
+  require_all_services: true
+
+  # Services pre-flight insists on. Servers that do not advertise 'emergency'
+  # (simulators, dummy servers) are still perfectly testable, so it is not in
+  # this list - it is added automatically when emergency_on_abort is true.
+  required_services: [takeoff, land]
+
+  # Newer firmware with the supervisor enabled refuses to fly unarmed, and an
+  # unarmed takeoff looks exactly like a lost command in the report. Arming
+  # happens per drone, timing.arm_delay before that drone's own takeoff.
+  #   auto  - arm every drone that advertises <ns>/arm, skip the rest
+  #   true  - arming is mandatory; a missing service or failure aborts
+  #   false - never arm
+  arm_before_flight: auto
+
+  # Disarm on the way out, after the landing has had time to finish. Off by
+  # default: disarming a drone that is still airborne drops it.
+  disarm_after_flight: false
+
+  # Ctrl-C, a scenario error and the watchdog all land the fleet.
+  land_on_abort: true
+  abort_land_height: 0.0
+  abort_land_duration: 2.0
+
+  # Cut the motors instead of landing on abort. The drones FALL. Only enable
+  # this for a caged or tethered setup.
+  emergency_on_abort: false
+
+  # Abort the run when any drone's telemetry has been silent this long
+  # (seconds). 0 disables the watchdog. 2-3 s is a sensible value for flight
+  # tests: a drone we cannot hear from is one we cannot command.
+  telemetry_stall_abort: 0.0
+
+telemetry:
+  # The downlink half of the measurement. Turning this off reduces the test
+  # to service latency only - command-loss detection needs pose data.
+  enabled: true
+  pose_topic: pose
+  status_topic: status
+
+  # Nominal rate of <ns>/pose from crazyflie_server, used for the "% of
+  # expected" column. Set this to whatever your server is configured for.
+  expected_pose_rate: 10.0
+
+  # A gap longer than this between pose messages counts as a stall (dropout).
+  stall_threshold: 0.5
+
+  # Per-drone ring buffer of pose samples. At 10 Hz, 4000 samples is ~400 s
+  # of history; raise it for long runs so early windows are not overwritten.
+  history_length: 4000
+  qos_depth: 10
+
+report:
+  console: true
+  output_dir: stress_results
+  formats: [json, csv]
+  tag: ''
+  per_call_rows: true
+
+# Scenario to run when none is given on the command line.
+test:
+  type: service_ping
+  params: {}
