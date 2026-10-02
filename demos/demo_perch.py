@@ -10,7 +10,8 @@ package -- only rclpy, crazyflie_interfaces and ``demo_perch.yaml``::
 Sequence (one drone):
 
 1. arm + high-level takeoff
-2. **approach**  cmd_hover to ``approach.below`` under the perch
+2. **approach**  cmd_hover to ``approach.below`` under the perch, then turn
+   to ``perch.yaw`` there so the gripper lines up with the perch
 3. **engage**    climb slowly past the perch height so the gripper snaps shut,
    press for ``engage.hold`` s, then disarm
 4. **perched**   hang disarmed for ``perched.duration``
@@ -27,8 +28,9 @@ takeoff spot.
 Everything between takeoff and land is ``cmd_hover``, a velocity setpoint with
 height hold, so each phase closes the loop on ``/<ns>/pose``: XY is
 P-controlled (vx/vy are body frame and rotated as such), the height setpoint
-is ramped. The yaw rate is zero throughout except for the release twist and
-the turn back after it, both P-controlled on the measured heading.
+is ramped. The yaw rate is zero throughout except for the turn to
+``perch.yaw``, the release twist and the turn back after it, all
+P-controlled on the measured heading.
 
 Ctrl-C lands in place -- which is also safe while the gripper still holds the
 drone, it just ends up hanging. While it hangs disarmed, Ctrl-C leaves it
@@ -80,18 +82,19 @@ MODES = ('full', 'perch_only', 'unperch_only')
 DEFAULTS: Dict[str, Any] = {
     'mode': 'full',
     'namespace': 'cf1',
-    'perch': {'position': None},
+    'perch': {'position': None, 'yaw': None},
     'takeoff': {'height': 0.5, 'duration': 2.5, 'settle': 1.0},
     'approach': {'below': 0.25, 'settle': 2.0, 'timeout': 20.0},
     'engage': {'overshoot': 0.05, 'speed': 0.10, 'hold': 1.5},
     'perched': {'duration': 5.0},
     'release': {'spinup': 1.0, 'z_offset': 0.0, 'angle_deg': 90.0,
-                'yaw_rate': 30.0, 'timeout': 8.0, 'drop': 0.30,
+                'timeout': 8.0, 'drop': 0.30,
                 'descent_speed': 0.15, 'settle': 1.0, 'min_drop_fraction': 0.5},
     'return': {'height': 0.5, 'settle': 1.0, 'timeout': 20.0},
     'land': {'duration': 3.0},
     'control': {'rate_hz': 20.0, 'kp_xy': 1.0, 'max_vxy': 0.3, 'max_vz': 0.3,
-                'kp_yaw': 1.5, 'xy_tolerance': 0.03, 'z_tolerance': 0.05,
+                'max_yaw_rate': 30.0, 'kp_yaw': 1.5,
+                'xy_tolerance': 0.03, 'z_tolerance': 0.05,
                 'yaw_tolerance_deg': 3.0, 'yaw_rate_sign': 1},
     'safety': {'max_height': 1.8, 'pose_timeout': 0.5, 'arm_delay': 0.5,
                'notify_stop_ms': 300, 'service_timeout': 3.0, 'startup_timeout': 5.0},
@@ -144,6 +147,9 @@ def validate(cfg: Dict[str, Any]) -> None:
         position = cfg['perch']['position']
         if not (isinstance(position, (list, tuple)) and len(position) == 3):
             raise ValueError('perch.position must be set to [x, y, z]')
+        yaw = cfg['perch']['yaw']
+        if isinstance(yaw, bool) or not isinstance(yaw, (int, float)):
+            raise ValueError('perch.yaw must be set to the latching heading in deg')
         perch_z = float(position[2])
         top = perch_z + float(cfg['engage']['overshoot'])
         if top > max_height:
@@ -163,7 +169,7 @@ def validate(cfg: Dict[str, Any]) -> None:
             raise ValueError(f"{key}.height must be in (0, {max_height}]")
 
     for dotted in ('engage.speed', 'release.descent_speed', 'control.rate_hz',
-                   'control.max_vz', 'control.max_vxy', 'release.yaw_rate'):
+                   'control.max_vz', 'control.max_vxy', 'control.max_yaw_rate'):
         section, key = dotted.split('.')
         if float(cfg[section][key]) <= 0.0:
             raise ValueError(f"{dotted} must be > 0")
@@ -301,7 +307,9 @@ class PerchDemo(Node):
             self.log.info(f"{where}, hanging on the perch (unperch_only)")
         else:
             px, py, pz = self._perch_position()
-            self.log.info(f"{where}, perch at ({px:.2f}, {py:.2f}, {pz:.2f})")
+            self.log.info(f"{where}, heading {math.degrees(self.start.yaw):.0f} deg; "
+                          f"perch at ({px:.2f}, {py:.2f}, {pz:.2f}), "
+                          f"yaw {float(self.cfg['perch']['yaw']):.0f} deg")
 
     def _takeoff(self) -> None:
         height = float(self.cfg['takeoff']['height'])
@@ -323,13 +331,20 @@ class PerchDemo(Node):
         self.z_cmd = pose.z
 
     def _approach(self) -> None:
+        cfg = self.cfg['approach']
         px, py, pz = self._perch_position()
-        z = pz - float(self.cfg['approach']['below'])
+        z = pz - float(cfg['below'])
         self.log.info(f"[approach] to ({px:.2f}, {py:.2f}, {z:.2f})")
-        if not self._fly('approach', (px, py), z,
-                         settle=float(self.cfg['approach']['settle']),
-                         timeout=float(self.cfg['approach']['timeout'])):
-            raise Abort('could not settle under the perch')
+        if not self._fly('approach', (px, py), z, timeout=float(cfg['timeout'])):
+            raise Abort('could not get under the perch')
+
+        # Line the gripper up with the perch before climbing into it.
+        yaw = float(self.cfg['perch']['yaw'])
+        self.log.info(f"[approach] turning to the perch heading ({yaw:.0f} deg)")
+        if not self._fly('align', (px, py), z, yaw=math.radians(yaw),
+                         settle=float(cfg['settle']),
+                         timeout=float(cfg['timeout'])):
+            raise Abort('could not settle under the perch at perch.yaw')
 
     def _engage(self) -> None:
         cfg = self.cfg['engage']
@@ -436,7 +451,7 @@ class PerchDemo(Node):
 
         ``xy=None`` streams zero horizontal velocity instead of position
         control. ``yaw=None`` streams zero yaw rate, i.e. keeps the current
-        heading; a ``yaw`` target (rad) turns at up to ``release.yaw_rate``.
+        heading; a ``yaw`` target (rad) turns at up to ``control.max_yaw_rate``.
         The height setpoint ramps from ``self.z_cmd`` at ``max_vz``.
 
         With ``duration``: stream for exactly that long and return True.
@@ -447,7 +462,7 @@ class PerchDemo(Node):
         dt = 1.0 / float(ctl['rate_hz'])
         z = clamp(z, 0.0, float(self.cfg['safety']['max_height']))
         z_step = float(ctl['max_vz'] if max_vz is None else max_vz) * dt
-        yaw_cap = float(self.cfg['release']['yaw_rate'])
+        yaw_cap = float(ctl['max_yaw_rate'])
         kp_xy, max_vxy = float(ctl['kp_xy']), float(ctl['max_vxy'])
 
         start = time.monotonic()
