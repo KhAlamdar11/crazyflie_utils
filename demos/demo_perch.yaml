@@ -1,0 +1,106 @@
+# ---------------------------------------------------------------------------
+# demo_perch - perch-mechanism test for one Crazyflie.
+#
+#   python3 demos/demo_perch.py                     # uses this file
+#   python3 demos/demo_perch.py -c my_perch.yaml
+#
+# takeoff -> cmd_hover to just under the perch -> turn to perch.yaw ->
+# climb slowly so the top-mounted gripper snaps shut -> disarm, hang ->
+# re-arm, spin up holding height, yaw 90 deg clockwise to unlock -> drop
+# clear -> turn back to the starting heading -> cmd_hover back over the
+# start -> land.
+#
+# Positions are in the frame /<namespace>/pose is published in, metres.
+# Ctrl-C lands (or, while hanging disarmed, leaves it hanging).
+# ---------------------------------------------------------------------------
+
+# full          the whole sequence above
+# perch_only    takeoff -> perch -> disarm, and stop: left hanging
+# unperch_only  hang the drone on the perch by hand (disarmed) first; waits
+#               perched.duration (step back!), unperches, turns back to the
+#               heading it hung at, flies to (0, 0) and lands.
+#               perch.position and perch.yaw are not needed.
+mode: full
+
+namespace: cf_1
+
+perch:
+  # REQUIRED for full and perch_only. Where the drone's pose sits when it
+  # hangs latched on the perch, and the heading it hangs at: it turns to
+  # perch.yaw under the perch before climbing, so the gripper lines up.
+  # Easiest way to get them: hang the drone on the perch by hand and read
+  #   ros2 topic echo /cf1/pose --once
+  # yaw from the orientation: degrees(2 * atan2(z, w)) (drone near level).
+  position: [1.067,-0.136,0.65]            # [x, y, z]
+  yaw: -90.0                  # deg, CCW from the frame's +x axis
+
+takeoff:
+  height: 0.4
+  duration: 2.5
+  settle: 1.0               # s of hover after the takeoff finishes
+
+approach:
+  below: 0.2               # hover this far under perch.position first
+  settle: 2.0               # s centred under the perch at perch.yaw before
+                            # climbing
+  timeout: 20.0             # s each for getting there and for the turn
+
+engage:
+  # "Go up a bit": command this far ABOVE the perch height, so the gripper is
+  # pressed shut instead of just touching.
+  overshoot: 0.12
+  speed: 0.6             # climb speed, m/s -- this is the contact, go slow
+  hold: 1.5                 # s pressing at the top, then disarm
+
+perched:
+  duration: 10.0             # s hanging disarmed before the release (also the
+                             # stand-back time at the start of unperch_only)
+
+release:
+  spinup: 1.0               # s holding height with motors on before twisting
+  z_offset: 0.0             # added to the hanging height for the hold setpoint
+  # Twist, and the turn back to the starting heading once it has dropped clear.
+  angle_deg: 90.0           # positive = clockwise seen from above
+  timeout: 8.0              # give up turning after this and carry on
+
+  drop: 0.2                # then go down this much ...
+  descent_speed: 0.15
+  settle: 1.0
+  # ... and it must really have dropped at least this fraction of `drop`,
+  # otherwise it is still hooked on the perch and the demo lands in place
+  # (which just leaves it hanging).
+  min_drop_fraction: 0.5
+
+return:
+  height: 0.5
+  settle: 1.0
+  timeout: 20.0
+
+land:
+  duration: 3.0
+
+control:
+  rate_hz: 20.0             # cmd_hover stream rate
+  kp_xy: 1.0                # m/s per m of position error
+  max_vxy: 0.3              # m/s
+  max_vz: 0.3               # m/s, how fast the height setpoint ramps by default
+  # The turn to perch.yaw, the release twist and the turn back after it are
+  # the only rotations in the demo; yaw rate is zero elsewhere.
+  max_yaw_rate: 30.0        # deg/s cap while turning (sent as rad/s)
+  kp_yaw: 1.5               # deg/s per deg of heading error
+  xy_tolerance: 0.05
+  z_tolerance: 0.05
+  yaw_tolerance_deg: 8.0
+
+  # 1: +yaw_rate turns CCW (ROS convention; what the dummy server does).
+  # If the twist starts turning the wrong way on hardware, the demo stops
+  # within 20 deg and lands -- set -1 then (firmware/server versions differ).
+  yaw_rate_sign: -1          # 1 | -1
+
+safety:
+  max_height: 1.8           # every height setpoint is clamped to this
+  pose_timeout: 0.5         # s without pose while streaming -> abort
+  arm_delay: 0.5            # s after arming before any setpoint is sent
+  notify_stop_ms: 300       # handover window from cmd_hover back to land
+  service_timeout: 3.0
+  startup_timeout: 5.0      # wait this long for services and pose
